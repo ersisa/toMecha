@@ -37,6 +37,7 @@ class KeyInput {
 class TouchInput {
   constructor() {
     this.held = { left: false, right: false, block: false };
+    this.jumpDown = false;
     this.jumpEdgeFlag = false;
     this.attackEdgeFlag = false;
     this._safetyTimer = null;
@@ -54,7 +55,7 @@ class TouchInput {
         e.preventDefault();
         if (btn.setPointerCapture) { try { btn.setPointerCapture(e.pointerId); } catch (err) {} }
         btn.classList.add('on');
-        if (act === 'jump') this.jumpEdgeFlag = true;
+        if (act === 'jump') { this.jumpEdgeFlag = true; this.jumpDown = true; }
         else if (act === 'attack') this.attackEdgeFlag = true;
         else if (act in this.held) this.held[act] = true;
         this._resetSafetyTimer();
@@ -62,6 +63,7 @@ class TouchInput {
       const up = (e) => {
         if (e && e.cancelable) e.preventDefault();
         btn.classList.remove('on');
+        if (act === 'jump') this.jumpDown = false;
         if (act in this.held) this.held[act] = false;
         this._resetSafetyTimer();
       };
@@ -78,6 +80,7 @@ class TouchInput {
     this.held.left = false;
     this.held.right = false;
     this.held.block = false;
+    this.jumpDown = false;
     document.querySelectorAll('#touch .tbtn.on').forEach((b) => b.classList.remove('on'));
     if (this._safetyTimer) { clearTimeout(this._safetyTimer); this._safetyTimer = null; }
   }
@@ -96,6 +99,7 @@ class LocalInput {
       left:  k.anyDown(KEYMAP.left) || t.held.left,
       right: k.anyDown(KEYMAP.right) || t.held.right,
       block: k.anyDown(KEYMAP.block) || t.held.block,
+      jump:  k.anyDown(KEYMAP.jump) || t.jumpDown,
       jumpEdge: false, attackEdge: false,
     };
     if (k.anyPressed(KEYMAP.jump) || t.jumpEdgeFlag) { s.jumpEdge = true; t.jumpEdgeFlag = false; }

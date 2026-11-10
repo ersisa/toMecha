@@ -602,8 +602,9 @@ class App {
     } else if (m.t === 'inp') {
       if (this.mode !== 'net-host') return;
       let r = this.remoteInp.get(from);
-      if (!r) { r = { l: false, r: false, b: false, j: false, a: false, ts: 0 }; this.remoteInp.set(from, r); }
+      if (!r) { r = { l: false, r: false, b: false, jh: false, j: false, a: false, ts: 0 }; this.remoteInp.set(from, r); }
       r.l = m.l; r.r = m.r; r.b = m.b;
+      r.jh = !!m.jh;
       if (m.j) r.j = true;
       if (m.a) r.a = true;
       r.ts = performance.now();
@@ -833,7 +834,7 @@ class App {
       if (li.jumpEdge) this.pending.j = true;
       if (li.attackEdge) this.pending.a = true;
       const p = this.pending;
-      this.link.send({ t: 'inp', l: li.left, r: li.right, b: li.block, j: p.j ? 1 : 0, a: p.a ? 1 : 0 });
+      this.link.send({ t: 'inp', l: li.left, r: li.right, b: li.block, jh: li.jump ? 1 : 0, j: p.j ? 1 : 0, a: p.a ? 1 : 0 });
       p.j = false; p.a = false;
     }
 
@@ -1015,6 +1016,7 @@ class App {
           l: li ? li.left : false,
           r: li ? li.right : false,
           b: li ? li.block : false,
+          jh: li && li.jump ? 1 : 0,
           j: p.j ? 1 : 0, a: p.a ? 1 : 0,
         });
         p.j = false; p.a = false;
@@ -1091,7 +1093,7 @@ class App {
         /* 远端玩家输入 */
         const r = this.remoteInp.get(m.id);
         if (r) {
-          inp = { left: r.l, right: r.r, block: r.b, jumpEdge: r.j, attackEdge: r.a };
+          inp = { left: r.l, right: r.r, block: r.b, jump: !!r.jh, jumpEdge: r.j, attackEdge: r.a };
           r.j = false; r.a = false;
         } else {
           inp = { left: false, right: false, block: false, jumpEdge: false, attackEdge: false };
