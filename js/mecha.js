@@ -40,6 +40,8 @@ class Mecha {
     this._slowFall = false;      // 飞鼠：悬空结束后的缓降状态
     this._flyUsed = false;       // 飞鼠：本次滞空是否已触发
     this._tapTimes = [];         // 飞鼠：空中连点跳跃的时间点
+    this._ascending = false;     // 飞鼠：飞升阶段
+    this._jumpPending = false;   // 飞鼠：地面按下待起跳（松开才跳）
     this._airPeakY = WORLD.groundY;  // 震荡波：本次腾空的最高点（y 最小值）
   }
 
@@ -121,25 +123,39 @@ class Mecha {
       }
     }
 
-    /* 技能：飞鼠 — 按住跳跃1.5秒（起跳后持续按住即可）或快速连点3次 → 悬空4秒，之后缓降 */
+    /* 技能：飞鼠
+     * - 地面按住跳跃 0.8s：飞升到场上最高处后悬空
+     * - 空中 0.9s 内连按 3 次跳跃：就地悬空（二段跳已被屏蔽，不会抢输入） */
     if (this.skill === 'flysquirrel' && !this.dead) {
       const t = this.game.time || 0;
-      /* 按住时间连续累计（松开即清零），保证起跳后按住能凑够 1.5s */
-      if (inp.jump) this._jumpHoldT += dt; else this._jumpHoldT = 0;
-      /* 连点计数：0.9 秒窗口内累计 3 次 */
-      if (inp.jumpEdge) {
-        this._tapTimes.push(t);
+      if (this.onGround) {
+        this._ascending = false;
+        if (inp.jump) {
+          this._jumpHoldT += dt;
+          if (this._jumpHoldT >= 0.8) { this._jumpPending = false; this._startAscent(fx); }
+        } else {
+          /* 松开：若之前按下过但没到 0.8s，补一次普通跳跃 */
+          if (this._jumpPending) {
+            this._jumpPending = false;
+            const jumpS = CFG.jumpSpeed * (this.skill === 'swift' ? 1.15 : 1);
+            this.vy = -jumpS; this.jumps = 1; this.onGround = false;
+            fx.burst(this.x, this.y, '#8899bb', 5, 60);
+          }
+          this._jumpHoldT = 0;
+        }
+      } else {
+        this._jumpPending = false;
+        this._jumpHoldT = 0;
+        if (inp.jumpEdge) {
+          this._tapTimes.push(t);
+        }
         this._tapTimes = this._tapTimes.filter((x) => t - x <= 0.9);
-      } else if (this._tapTimes.length) {
-        this._tapTimes = this._tapTimes.filter((x) => t - x <= 0.9);
+        if (this._hoverT <= 0 && !this._ascending && !this._flyUsed && this._tapTimes.length >= 3) {
+          this._startHover(fx);
+        }
       }
-      /* 长按可从地面起飞；连点必须在空中 */
-      if (this._hoverT <= 0 && !this._flyUsed) {
-        if (this._jumpHoldT >= 1.5) this._startHover(fx);
-        else if (!this.onGround && this._tapTimes.length >= 3) this._startHover(fx);
-      }
-      /* 悬空粒子 */
-      if (this._hoverT > 0 && Math.random() < 0.3) {
+      /* 飞行粒子 */
+      if ((this._hoverT > 0 || this._ascending) && Math.random() < 0.3) {
         fx.spawn(this.x - this.facing * 8, this.y - 6, {
           color: '#38d47a', vx: rand(-20, 20), vy: rand(10, 40),
           life: 0.3, maxLife: 0.3, size: 2,
@@ -258,11 +274,19 @@ class Mecha {
         /* 疾风步：跳跃高度+15% */
         if (this.skill === 'swift') { jumpS *= 1.15; jump2S *= 1.15; }
         if (this.onGround) {
-          this.vy = -jumpS; this.jumps = 1; this.onGround = false;
-          fx.burst(this.x, this.y, '#8899bb', 5, 60);
+          if (this.skill === 'flysquirrel') {
+            /* 飞鼠：地面按下不立即起跳，松开才跳；按住 0.8s 触发飞升（见技能逻辑） */
+            this._jumpPending = true;
+          } else {
+            this.vy = -jumpS; this.jumps = 1; this.onGround = false;
+            fx.burst(this.x, this.y, '#8899bb', 5, 60);
+          }
         } else if (this.jumps < 2) {
-          this.vy = -jump2S; this.jumps = 2;
-          fx.burst(this.x, this.y - 8, this.palette.shield, 8, 90);
+          /* 飞鼠：空中按键留给"连点三次悬空"判定，绝不触发二段跳 */
+          if (this.skill !== 'flysquirrel') {
+            this.vy = -jump2S; this.jumps = 2;
+            fx.burst(this.x, this.y - 8, this.palette.shield, 8, 90);
+          }
         }
       }
     }
@@ -270,9 +294,21 @@ class Mecha {
     /* 物理 + 平台/地面碰撞（单向平台；下跳期间忽略平台） */
     const prevY = this.y;
     this.dropT = Math.max(0, this.dropT - dt);
-    /* 飞鼠：悬空期间不受重力，只能左右移动 */
+    /* 飞鼠：飞升 / 悬空期间不受重力，只能左右移动 */
+    const ascending = this.skill === 'flysquirrel' && this._ascending;
     const hovering = this.skill === 'flysquirrel' && this._hoverT > 0 && !this.onGround;
-    if (hovering) {
+    if (ascending) {
+      /* 飞升到场上最高处（顶部留 40px）后转入悬空 */
+      this.vy = -520;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if (this.y <= FLY_TOP_Y) {
+        this.y = FLY_TOP_Y;
+        this._ascending = false;
+        this.vy = 0;
+        this._hoverT = 4;
+      }
+    } else if (hovering) {
       this._hoverT = Math.max(0, this._hoverT - dt);
       this.vy = 0;
       this.x += this.vx * dt;
@@ -284,7 +320,7 @@ class Mecha {
       this.x += this.vx * dt; this.y += this.vy * dt;
     }
     let landed = false;
-    if (!hovering && this.vy >= 0) {
+    if (!ascending && !hovering && this.vy >= 0) {
       if (this.y >= WORLD.groundY) { this.y = WORLD.groundY; landed = true; }
       else if (this.dropT <= 0) for (const p of g.world.platforms) {
         if (this.x > p.x - 8 && this.x < p.x + p.w + 8 && prevY <= p.y + 0.01 && this.y >= p.y) {
@@ -315,9 +351,9 @@ class Mecha {
       }
       this.vy = 0; this.onGround = true; this.jumps = 0;
       this._airPeakY = this.y;
-      /* 飞鼠落地复位（长按计时不在此清零：由松开按键控制，保证起跳后按住能累计） */
+      /* 飞鼠落地复位（长按/待起跳状态由技能逻辑自行管理，此处置零会打断蓄力） */
       this._hoverT = 0; this._slowFall = false; this._flyUsed = false;
-      this._tapTimes = [];
+      this._ascending = false; this._tapTimes = [];
     } else {
       this.onGround = false;
       if (this.y < this._airPeakY) this._airPeakY = this.y;
@@ -631,18 +667,30 @@ class Mecha {
     if (this._pet) this._drawPet(ctx);
   }
 
-  /* 飞鼠：开始悬空（4秒，可左右移动，不自主下落；在地面触发则直接起飞） */
+  /* 飞鼠：地面长按 0.8s → 飞升到场上最高处 */
+  _startAscent(fx) {
+    if (this._flyUsed || this._hoverT > 0 || this._ascending) return;
+    this._flyUsed = true;
+    this._ascending = true;
+    this._slowFall = false;
+    this.vy = -520;
+    this.onGround = false;
+    this._jumpHoldT = 0;
+    this._tapTimes = [];
+    fx.popup(this.x, this.y - 52, '飞鼠·飞升！', '#38d47a');
+    fx.burst(this.x, this.y - 24, '#38d47a', 14, 120);
+  }
+
+  /* 飞鼠：空中连点三次 → 就地悬空（4秒） */
   _startHover(fx) {
     if (this._flyUsed || this._hoverT > 0) return;
     this._flyUsed = true;
     this._hoverT = 4;
     this._slowFall = false;
     this.vy = 0;
-    if (this.onGround) this.y -= 4;   // 从地面起飞时先离地，避免当帧判定落地
     this.onGround = false;
-    this._jumpHoldT = 0;
     this._tapTimes = [];
-    fx.popup(this.x, this.y - 52, '飞鼠！', '#38d47a');
+    fx.popup(this.x, this.y - 52, '飞鼠·悬空！', '#38d47a');
     fx.burst(this.x, this.y - 24, '#38d47a', 12, 100);
   }
 
