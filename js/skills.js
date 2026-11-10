@@ -34,7 +34,7 @@ const SKILLS = {
   },
   flysquirrel: {
     id: 'flysquirrel', name: '飞鼠', icon: '🦔',
-    desc: '地面按住跳跃0.8秒飞升至最高处悬空；空中按住0.3秒或连点3次就地悬空（二段跳保留）',
+    desc: '地面按住跳跃0.8秒飞升至二段跳最高点悬空；空中按住0.3秒或连点3次就地悬空（二段跳保留）',
     color: '#38d47a',
   },
   mystery: {

@@ -44,6 +44,7 @@ class Mecha {
     this._jumpPending = false;   // 飞鼠：地面按下待起跳（松开才跳）
     this._airJumpPending = false;// 飞鼠：空中按下待判定（松手二段跳/按住悬空）
     this._airHoldT = 0;          // 飞鼠：空中按住时长
+    this._ascendTargetY = 0;     // 飞鼠：飞升目标高度（二段跳最高点）
     this._airPeakY = WORLD.groundY;  // 震荡波：本次腾空的最高点（y 最小值）
   }
 
@@ -313,12 +314,12 @@ class Mecha {
     const ascending = this.skill === 'flysquirrel' && this._ascending;
     const hovering = this.skill === 'flysquirrel' && this._hoverT > 0 && !this.onGround;
     if (ascending) {
-      /* 飞升到场上最高处（顶部留 40px）后转入悬空 */
+      /* 飞升到"二段跳最高点"的高度后转入悬空 */
       this.vy = -520;
       this.x += this.vx * dt;
       this.y += this.vy * dt;
-      if (this.y <= FLY_TOP_Y) {
-        this.y = FLY_TOP_Y;
+      if (this.y <= this._ascendTargetY) {
+        this.y = this._ascendTargetY;
         this._ascending = false;
         this.vy = 0;
         this._hoverT = 4;
@@ -698,12 +699,20 @@ class Mecha {
     fx.burst(this.x, this.y - 8, this.palette.shield, 8, 90);
   }
 
-  /* 飞鼠：地面长按 0.8s → 飞升到场上最高处 */
+  /* 飞鼠：二段跳能达到的最大上升高度（首跳 + 二段跳，含疾风步加成） */
+  _doubleJumpRise() {
+    const mul = this.skill === 'swift' ? 1.15 : 1;
+    const j1 = CFG.jumpSpeed * mul, j2 = CFG.jump2Speed * mul, g = CFG.gravity;
+    return (j1 * j1) / (2 * g) + (j2 * j2) / (2 * g);
+  }
+
+  /* 飞鼠：地面长按 0.8s → 飞升到二段跳最高点 */
   _startAscent(fx) {
     if (this._flyUsed || this._hoverT > 0 || this._ascending) return;
     this._flyUsed = true;
     this._ascending = true;
     this._slowFall = false;
+    this._ascendTargetY = Math.max(8, this.y - this._doubleJumpRise());
     this.vy = -520;
     this.onGround = false;
     this._jumpHoldT = 0;

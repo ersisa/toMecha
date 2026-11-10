@@ -44,9 +44,6 @@ const BGM_MAX_FILE = 20 * 1024 * 1024;
  * 该模式下没有 Node 服务器：单人可玩，多人联机不可用 */
 const IS_LOCAL_FILE = (typeof location !== 'undefined') && location.protocol === 'file:';
 
-/* 飞鼠飞升的顶点高度（离地图顶部留出的距离） */
-const FLY_TOP_Y = 40;
-
 function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 function rand(a, b) { return a + Math.random() * (b - a); }
 function choice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
