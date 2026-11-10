@@ -1,0 +1,11 @@
+# 自签证书与私钥（node server.js --gen-cert 会自动生成）
+cert.pem
+key.pem
+
+# 部署配置（与本地环境绑定）
+.sealos/
+
+# 依赖与日志
+node_modules/
+*.log
+.DS_Store

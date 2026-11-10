@@ -1,0 +1,27 @@
+# Sealos / Docker 构建忽略
+.git
+.github
+.gitignore
+node_modules
+*.log
+.npm
+.cache
+__pycache__
+.env
+.env.local
+.env.*
+README*
+*.md
+.vscode
+.idea
+.DS_Store
+*.tmp.*
+tmp/
+temp/
+.sealos/logs
+# 自签证书文件不打包进镜像（云端 Sealos Ingress 自带正规 HTTPS）
+cert.pem
+key.pem
+*.pem
+*.crt
+*.key

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>像素机甲对战 · Pixel Mecha Battle</title>
+<link rel="stylesheet" href="style.css?v=19">
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <!-- HUD：我的血条 / 房间码 / 其他玩家血条列表 -->
+    <div id="hud">
+      <div class="fighter me">
+        <div class="row"><span class="name" id="name-me">你</span><span class="buff" id="buff-me"></span></div>
+        <div class="hpbar"><div class="hpfill me" id="hp-me"></div></div>
+        <div class="wep" id="wep-me">拳刃</div>
+      </div>
+      <div class="mid">
+        <div class="room" id="room-tag"></div>
+        <div class="vs">VS</div>
+      </div>
+      <div id="others"></div>
+    </div>
+
+    <button id="btn-menu" title="返回菜单">≡</button>
+    <button id="btn-bgm-mute" class="bgm-mute hidden" title="音乐开关">♪</button>
+
+    <!-- 移动端虚拟按键（触屏自动显示） -->
+    <div id="touch">
+      <div class="pad left">
+        <button class="tbtn move" data-act="left">◀</button>
+        <button class="tbtn move" data-act="right">▶</button>
+      </div>
+      <div class="pad right">
+        <button class="tbtn def" data-act="block">防</button>
+        <button class="tbtn jump" data-act="jump">跳</button>
+        <button class="tbtn atk" data-act="attack">攻</button>
+      </div>
+    </div>
+
+    <div id="announce"></div>
+
+    <!-- 胜负结算 -->
+    <div id="ko" class="overlay hidden">
+      <div class="big" id="ko-text"></div>
+      <div class="sub" id="ko-sub"></div>
+      <button id="btn-rematch" class="mbtn">再来一局</button>
+    </div>
+
+    <!-- 主菜单（仅作为单人模式入口和回退时展示；默认直接进入大厅） -->
+    <div id="menu" class="overlay">
+      <h1>像素机甲对战</h1>
+      <p class="tag">PIXEL MECHA BATTLE</p>
+      <div class="menu-box">
+        <button id="btn-bot" class="mbtn big">单人 · 挑战机器人</button>
+        <button id="btn-host" class="mbtn big">多人联机 · 开新房间</button>
+        <div class="join-row">
+          <input id="room-input" maxlength="4" placeholder="输入房间码" autocomplete="off">
+          <button id="btn-join" class="mbtn">加入</button>
+        </div>
+      </div>
+      <!-- 单人模式 BGM 控制栏 -->
+      <div id="bgm-bar-local" class="bgm-bar">
+        <span class="bgm-label">🎵 本地BGM</span>
+        <input id="bgm-input-local" type="text" placeholder="音频直链 (mp3/ogg/wav)" autocomplete="off" spellcheck="false">
+        <button id="btn-bgm-play-local" class="mbtn small">播放</button>
+        <button id="btn-bgm-file-local" class="mbtn small ghost">选择文件</button>
+        <input id="bgm-file-local" class="file-input" type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a,.aac,.flac">
+        <button id="btn-bgm-stop-local" class="mbtn small ghost">停止</button>
+      </div>
+      <p class="hint">键盘：A/D 移动 · W/空格 跳跃（可二段跳）· S/↓+跳 下跳穿落平台 · J 攻击 · K 防御 · R 重开 · Esc 菜单</p>
+      <p class="hint dim">打开本页自动进入房间 · 复制地址栏 URL 发给好友即可联机（公网/局域网通用）</p>
+    </div>
+
+    <!-- 对战大厅（默认直接进入；玩家列表 + 邀请链接 + 开始对战按钮） -->
+    <div id="lobby" class="overlay hidden">
+      <h2 class="lobby-title">对战大厅</h2>
+      <div id="net-status"></div>
+      <div class="lobby-card">
+        <div id="lobby-list"></div>
+        <div id="lobby-hint"></div>
+        <div class="share-box hidden" id="share-box">
+          <span class="share-label">邀请链接</span>
+          <input id="share-url" readonly autocomplete="off" spellcheck="false">
+          <button id="btn-copy" class="mbtn small">复制</button>
+        </div>
+        <!-- 房主 BGM 控制栏 -->
+        <div id="bgm-bar" class="bgm-bar hidden">
+          <span class="bgm-label">🎵 房间BGM</span>
+          <input id="bgm-input" type="text" placeholder="音频直链 (mp3/ogg/wav)" autocomplete="off" spellcheck="false">
+          <button id="btn-bgm-play" class="mbtn small">播放</button>
+          <button id="btn-bgm-file" class="mbtn small ghost">选择文件</button>
+          <input id="bgm-file" class="file-input" type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a,.aac,.flac">
+          <button id="btn-bgm-stop" class="mbtn small ghost">停止</button>
+        </div>
+        <div id="bgm-now" class="bgm-now hidden">
+          <span class="bgm-now-icon">🎵</span>
+          <span id="bgm-now-text">当前房间背景音乐</span>
+        </div>
+      </div>
+      <button id="btn-start" class="mbtn hidden">开始对战</button>
+      <button id="btn-cancel-net" class="mbtn ghost">取消并返回</button>
+    </div>
+
+    <!-- 技能选择卡界面（开局前每人选1张） -->
+    <div id="skill-pick" class="overlay hidden">
+      <h2 class="skill-title">选择你的技能</h2>
+      <p class="skill-sub">三选一，每局仅可携带一个技能</p>
+      <div id="skill-cards" class="skill-cards"></div>
+      <div id="skill-timer-bar" class="skill-timer-bar"><div id="skill-timer-fill" class="skill-timer-fill"></div></div>
+      <p class="skill-hint" id="skill-wait-hint"></p>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+</div>
+
+<script src="js/config.js?v=19"></script>
+<script src="js/skills.js?v=19"></script>
+<script src="js/input.js?v=19"></script>
+<script src="js/net.js?v=19"></script>
+<script src="js/world.js?v=19"></script>
+<script src="js/mecha.js?v=19"></script>
+<script src="js/bot.js?v=19"></script>
+<script src="game.js?v=19"></script>
+</body>
+</html>
