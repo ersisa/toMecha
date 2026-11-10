@@ -978,7 +978,7 @@ class App {
     if (this.mode === 'net-client' && snap.b) {
       this._bombers = snap.b.map((b) => ({
         x: b.x, y: b.y, vx: b.vx, ownerId: b.o,
-        dropT: 0.2, life: b.l,
+        dropT: 0.2, life: b.l, passes: b.p || 0,
       }));
     }
     if (snap.ko !== undefined && snap.ko !== null && this.state === 'fight') {
@@ -1001,7 +1001,7 @@ class App {
           t: 'snap',
           m: ms,
           w: this.world.serialize(),
-          b: (this._bombers || []).map((b) => ({ x: Math.round(b.x), y: b.y, vx: Math.round(b.vx), o: b.ownerId, l: +b.life.toFixed(1) })),
+          b: (this._bombers || []).map((b) => ({ x: Math.round(b.x), y: b.y, vx: Math.round(b.vx), o: b.ownerId, l: +b.life.toFixed(1), p: b.passes || 0 })),
           ko: this.state === 'ko' ? (this.winner ? this.winner.id : '') : null,
         });
       }
@@ -1141,6 +1141,16 @@ class App {
     for (const b of this._bombers) {
       b.x += b.vx * dt;
       b.life -= dt;
+      /* 到达地图边界：折返；完成一个来回后离场 */
+      if (b.vx < 0 && b.x <= -20) {
+        b.passes = (b.passes || 0) + 1;
+        if (b.passes >= 2) { b.done = true; continue; }
+        b.x = -20; b.vx = Math.abs(b.vx);
+      } else if (b.vx > 0 && b.x >= WORLD.w + 20) {
+        b.passes = (b.passes || 0) + 1;
+        if (b.passes >= 2) { b.done = true; continue; }
+        b.x = WORLD.w + 20; b.vx = -Math.abs(b.vx);
+      }
       if (isAuth) {
         b.dropT -= dt;
         if (b.dropT <= 0) {
@@ -1157,7 +1167,7 @@ class App {
         }
       }
     }
-    this._bombers = this._bombers.filter((b) => b.life > 0 && b.x > -40 && b.x < WORLD.w + 40);
+    this._bombers = this._bombers.filter((b) => !b.done && b.life > 0);
   }
 
   /* 轰炸机绘制（机甲之后、特效之前） */

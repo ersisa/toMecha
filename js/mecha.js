@@ -35,9 +35,12 @@ class Mecha {
     this._escapeUsed = false;     // 溜之大吉是否已触发
     this._reviveUsed = false;     // 复活图腾是否已使用
     this._invincibleT = 0;        // 无敌时间
-    this._bomberT = 0;            // 轰炸机计时器
     this._pet = null;             // 宠物（驯兽大师）
-    this._flightT = 0;           // 飞行剩余时间
+    this._hoverT = 0;            // 飞鼠：悬空剩余时间
+    this._slowFall = false;      // 飞鼠：悬空结束后的缓降状态
+    this._flyUsed = false;       // 飞鼠：本次滞空是否已触发
+    this._tapTimes = [];         // 飞鼠：空中连点跳跃的时间点
+    this._airPeakY = WORLD.groundY;  // 震荡波：本次腾空的最高点（y 最小值）
   }
 
   /* 应用技能被动效果（在 newRound 时调用） */
@@ -60,11 +63,17 @@ class Mecha {
     if (this.skill === 'thrifty' && ammo > 0) {
       ammo += 3 + Math.floor(Math.random() * 3);  // +3~5
     }
-    /* 小帮手：射击次数-60% */
-    if (this.skill === 'homing' && ammo > 0) {
+    /* 小帮手：仅对抛射物武器生效，射击次数-60% */
+    if (this.skill === 'homing' && ammo > 0 && w.type === 'proj') {
       ammo = Math.max(1, Math.round(ammo * 0.4));
     }
     this.ammo = ammo;
+  }
+
+  /* 拾取补给后的技能回调（轰炸机：每次拾取空投触发一次） */
+  onDropPicked(fx) {
+    if (this.dead) return;
+    if (this.skill === 'bomber') this._spawnBomber(this.game);
   }
 
   applyItem(it) {
@@ -86,7 +95,6 @@ class Mecha {
     this.buffs.shield = Math.max(0, this.buffs.shield - dt);
     this.buffs.boost = Math.max(0, this.buffs.boost - dt);
     this._invincibleT = Math.max(0, this._invincibleT - dt);
-    this._flightT = Math.max(0, this._flightT - dt);
 
     /* 技能：随身血包 — 血量低于一半时恢复 */
     if (this.skill === 'medipack' && !this.dead && this._medikitUsed < 2) {
@@ -113,37 +121,29 @@ class Mecha {
       }
     }
 
-    /* 技能：飞鼠 — 长按跳跃键2秒后飞行3秒 */
+    /* 技能：飞鼠 — 按住跳跃1.5秒（起跳后持续按住即可）或快速连点3次 → 悬空4秒，之后缓降 */
     if (this.skill === 'flysquirrel' && !this.dead) {
-      if (inp.jump) {
-        this._jumpHoldT += dt;
-        if (this._jumpHoldT >= 2 && this._flightT <= 0) {
-          this._flightT = 3;
-          this._jumpHoldT = 0;
-          fx.popup(this.x, this.y - 52, '飞鼠！', '#38d47a');
-          fx.burst(this.x, this.y - 24, '#38d47a', 10, 80);
-        }
-      } else {
-        this._jumpHoldT = 0;
+      const t = this.game.time || 0;
+      /* 按住时间连续累计（松开即清零），保证起跳后按住能凑够 1.5s */
+      if (inp.jump) this._jumpHoldT += dt; else this._jumpHoldT = 0;
+      /* 连点计数：0.9 秒窗口内累计 3 次 */
+      if (inp.jumpEdge) {
+        this._tapTimes.push(t);
+        this._tapTimes = this._tapTimes.filter((x) => t - x <= 0.9);
+      } else if (this._tapTimes.length) {
+        this._tapTimes = this._tapTimes.filter((x) => t - x <= 0.9);
       }
-      if (this._flightT > 0) {
-        this.vy = -50;  // 缓慢上升
-        this.onGround = false;
-        if (Math.random() < 0.3) {
-          fx.spawn(this.x - this.facing * 8, this.y - 10, {
-            color: '#38d47a', vx: rand(-20, 20), vy: rand(10, 40),
-            life: 0.3, maxLife: 0.3, size: 2,
-          });
-        }
+      /* 长按可从地面起飞；连点必须在空中 */
+      if (this._hoverT <= 0 && !this._flyUsed) {
+        if (this._jumpHoldT >= 1.5) this._startHover(fx);
+        else if (!this.onGround && this._tapTimes.length >= 3) this._startHover(fx);
       }
-    }
-
-    /* 技能：轰炸机 — 每隔10秒触发一次 */
-    if (this.skill === 'bomber' && !this.dead) {
-      this._bomberT += dt;
-      if (this._bomberT >= 10) {
-        this._bomberT = 0;
-        this._spawnBomber(g);
+      /* 悬空粒子 */
+      if (this._hoverT > 0 && Math.random() < 0.3) {
+        fx.spawn(this.x - this.facing * 8, this.y - 6, {
+          color: '#38d47a', vx: rand(-20, 20), vy: rand(10, 40),
+          life: 0.3, maxLife: 0.3, size: 2,
+        });
       }
     }
 
@@ -197,10 +197,8 @@ class Mecha {
       const w = this.weapon;
       if (w.type === 'melee') {
         this.state = 'attack'; this.stateTime = 0; this.meleeHit = false;
-        let cd = w.cooldown;
-        /* 快速装填：冷却-35% */
-        if (this.skill === 'quickload') cd *= 0.65;
-        this.cooldown = cd; this.vx *= 0.3;
+        /* 快速装填对近战武器无效 */
+        this.cooldown = w.cooldown; this.vx *= 0.3;
       } else if (this.ammo > 0) {
         let cd = w.cooldown;
         /* 快速装填 */
@@ -215,7 +213,7 @@ class Mecha {
           this.ammo--;
         }
         if (w.type === 'ray') g.world.fireRay(this, enemies, fx);
-        else g.world.firePlasma(this);
+        else g.world.firePlasma(this, enemies);
         if (this.ammo <= 0) {
           fx.popup(this.x, this.y - 52, '弹药耗尽', '#ffb14f');
           this.weapon = WEAPONS.blade;
@@ -223,9 +221,7 @@ class Mecha {
       } else {
         this.weapon = WEAPONS.blade;
         this.state = 'attack'; this.stateTime = 0; this.meleeHit = false;
-        let cd = WEAPONS.blade.cooldown;
-        if (this.skill === 'quickload') cd *= 0.65;
-        this.cooldown = cd;
+        this.cooldown = WEAPONS.blade.cooldown;
       }
     }
 
@@ -274,10 +270,21 @@ class Mecha {
     /* 物理 + 平台/地面碰撞（单向平台；下跳期间忽略平台） */
     const prevY = this.y;
     this.dropT = Math.max(0, this.dropT - dt);
-    this.vy += CFG.gravity * dt;
-    this.x += this.vx * dt; this.y += this.vy * dt;
+    /* 飞鼠：悬空期间不受重力，只能左右移动 */
+    const hovering = this.skill === 'flysquirrel' && this._hoverT > 0 && !this.onGround;
+    if (hovering) {
+      this._hoverT = Math.max(0, this._hoverT - dt);
+      this.vy = 0;
+      this.x += this.vx * dt;
+      if (this._hoverT <= 0) this._slowFall = true;   // 悬空结束 → 缓降
+    } else {
+      this.vy += CFG.gravity * dt;
+      /* 飞鼠缓降：限制最大下落速度 */
+      if (this.skill === 'flysquirrel' && this._slowFall && this.vy > 70) this.vy = 70;
+      this.x += this.vx * dt; this.y += this.vy * dt;
+    }
     let landed = false;
-    if (this.vy >= 0) {
+    if (!hovering && this.vy >= 0) {
       if (this.y >= WORLD.groundY) { this.y = WORLD.groundY; landed = true; }
       else if (this.dropT <= 0) for (const p of g.world.platforms) {
         if (this.x > p.x - 8 && this.x < p.x + p.w + 8 && prevY <= p.y + 0.01 && this.y >= p.y) {
@@ -286,9 +293,35 @@ class Mecha {
       }
     }
     if (landed) {
-      if (!this.onGround) fx.burst(this.x, this.y, '#8899bb', 6, 70);
+      const wasAir = !this.onGround;
+      if (wasAir) fx.burst(this.x, this.y, '#8899bb', 6, 70);
+      /* 震荡波：从空中落地时释放冲击波，落差越大范围与击退越强 */
+      if (wasAir && this.skill === 'shockwave') {
+        const drop = Math.max(0, this.y - this._airPeakY);
+        if (drop > 24) {
+          const radius = Math.min(220, 60 + drop * 0.7);
+          const push = Math.min(420, 180 + drop * 1.4);
+          const lift = Math.min(320, 90 + drop * 0.8);
+          for (const e of g.mechs || []) {
+            if (e === this || e.dead) continue;
+            if (Math.abs(e.x - this.x) <= radius) {
+              const dir = e.x >= this.x ? 1 : -1;
+              e.vx = dir * push; e.vy = -lift; e.onGround = false;
+            }
+          }
+          fx.burst(this.x, this.y, '#a08fff', 24, Math.max(120, radius));
+          fx.popup(this.x, this.y - 52, '冲击波 ' + Math.round(radius), '#a08fff');
+        }
+      }
       this.vy = 0; this.onGround = true; this.jumps = 0;
-    } else this.onGround = false;
+      this._airPeakY = this.y;
+      /* 飞鼠落地复位（长按计时不在此清零：由松开按键控制，保证起跳后按住能累计） */
+      this._hoverT = 0; this._slowFall = false; this._flyUsed = false;
+      this._tapTimes = [];
+    } else {
+      this.onGround = false;
+      if (this.y < this._airPeakY) this._airPeakY = this.y;
+    }
     this.x = clamp(this.x, 14, WORLD.w - 14);
 
     /* 状态机 */
@@ -318,22 +351,12 @@ class Mecha {
           if (aabb(hb, e.hurtbox)) {
             this.meleeHit = true;
             e.takeHit(meleeDmg, this, {});
-            /* 吸血 */
-            if (this.skill === 'lifesteal') {
-              const hl = Math.round(meleeDmg * 0.3);
-              this.hp = Math.min(this._maxHp || CFG.maxHp, this.hp + hl);
-              fx.popup(this.x, this.y - 48, '+' + hl, '#ff5a5a');
-            }
-            /* 神秘人士 */
-            if (this.skill === 'mystery' && Math.random() < 0.3) {
-              const mysteryDmg = Math.round(meleeDmg * 0.5);
-              e.takeHit(mysteryDmg, this, {});
-              fx.popup(e.x, e.y - 52, '神秘 ' + mysteryDmg, '#c07bff');
-              fx.burst(e.x, e.y - 24, '#c07bff', 10, 120);
-            }
+            /* 吸血 / 神秘人士：统一走伤害结算回调 */
+            this.onDamageDealt(e, meleeDmg, fx);
             /* 双连击 */
             if (doubleHit) {
               e.takeHit(meleeDmg, this, {});
+              this.onDamageDealt(e, meleeDmg, fx);
               fx.popup(e.x, e.y - 52, '连击！', '#ff9a3d');
             }
             break;   // 单次挥击只命中一人
@@ -347,6 +370,24 @@ class Mecha {
       fx.spawn(this.x - this.facing * 8, this.y - 18, {
         color: '#ff9a3d', vx: -this.facing * 40, vy: rand(-20, 20), life: 0.3, maxLife: 0.3, size: 2,
       });
+    }
+  }
+
+  /* 造成伤害后的统一结算：吸血（近战20%/远程15%）与神秘人士（全武器通用） */
+  onDamageDealt(target, dmg, fx) {
+    if (!target || !dmg || dmg <= 0) return;
+    const g = this.game;
+    if (this.skill === 'lifesteal') {
+      const melee = this.weapon && this.weapon.type === 'melee';
+      const hl = Math.max(1, Math.round(dmg * (melee ? 0.20 : 0.15)));
+      this.hp = Math.min(this._maxHp || CFG.maxHp, this.hp + hl);
+      fx.popup(this.x, this.y - 48, '+' + hl, '#ff5a5a');
+    }
+    if (this.skill === 'mystery' && !target.dead && Math.random() < 0.3) {
+      const md = Math.max(1, Math.round(dmg * 0.5));
+      target.takeHit(md, this, {});
+      fx.popup(target.x, target.y - 52, '神秘 ' + md, '#c07bff');
+      fx.burst(target.x, target.y - 24, '#c07bff', 10, 120);
     }
   }
 
@@ -387,17 +428,7 @@ class Mecha {
       g.shake = 6;
     }
 
-    /* 技能：震荡波 — 落地时释放冲击波 */
-    if (this.skill === 'shockwave' && this.onGround && d > 5) {
-      for (const e of g.mechs || []) {
-        if (e === this || e.dead) continue;
-        if (Math.abs(e.x - this.x) < 60) {
-          const dir = e.x >= this.x ? 1 : -1;
-          e.vx = dir * 200; e.vy = -80; e.onGround = false;
-        }
-      }
-      fx.burst(this.x, this.y, '#a08fff', 20, 160);
-    }
+    /* 技能：震荡波已改为落地触发（见物理结算部分） */
 
     if (this.hp <= 0 && !this.dead) {
       /* 技能：复活图腾 — 给予一次复活 */
@@ -575,8 +606,8 @@ class Mecha {
       ctx.globalAlpha = 1;
     }
 
-    /* 飞行光环 */
-    if (this._flightT > 0) {
+    /* 飞行光环（飞鼠悬空） */
+    if (this._hoverT > 0) {
       ctx.globalAlpha = 0.2 + 0.1 * Math.sin(this.animT * 15);
       ctx.fillStyle = '#38d47a';
       ctx.beginPath(); ctx.arc(this.x, this.y - 20, 22, 0, Math.PI * 2); ctx.fill();
@@ -600,15 +631,33 @@ class Mecha {
     if (this._pet) this._drawPet(ctx);
   }
 
-  /* 轰炸机：从一侧飞过，每0.2秒丢一个10伤害炸弹 */
+  /* 飞鼠：开始悬空（4秒，可左右移动，不自主下落；在地面触发则直接起飞） */
+  _startHover(fx) {
+    if (this._flyUsed || this._hoverT > 0) return;
+    this._flyUsed = true;
+    this._hoverT = 4;
+    this._slowFall = false;
+    this.vy = 0;
+    if (this.onGround) this.y -= 4;   // 从地面起飞时先离地，避免当帧判定落地
+    this.onGround = false;
+    this._jumpHoldT = 0;
+    this._tapTimes = [];
+    fx.popup(this.x, this.y - 52, '飞鼠！', '#38d47a');
+    fx.burst(this.x, this.y - 24, '#38d47a', 12, 100);
+  }
+
+  /* 轰炸机：每次拾取空投召唤一架，横穿全图一个来回后消失，每0.2秒丢一个10伤害炸弹 */
   _spawnBomber(g) {
     const fromLeft = Math.random() < 0.5;
+    const speed = 120;
     const bomber = {
       x: fromLeft ? -20 : WORLD.w + 20,
       y: 100,
-      vx: fromLeft ? 120 : -120,
+      vx: fromLeft ? speed : -speed,
+      baseVx: fromLeft ? speed : -speed,
       dropT: 0,
-      life: WORLD.w / 120 + 2,
+      passes: 0,                                  // 已完成穿越次数（2 = 一个来回）
+      life: Math.ceil((WORLD.w / speed) * 2) + 4, // 兜底存活时间
       ownerId: this.id,   /* 记录归属，炸弹不误伤主人 */
     };
     g._bombers = g._bombers || [];
@@ -637,19 +686,25 @@ class Mecha {
     pet.animT += dt;
     pet.stateTime += dt;
 
-    /* 目标选择：最近存活敌人 */
+    /* 目标选择：以召唤者（主人）为圆心、半径 200px 内的最近敌人 */
     let tgt = null, td = 1e9;
+    const CHASE_RADIUS = 200;
     for (const e of enemies) {
       if (e.dead) continue;
+      if (Math.abs(e.x - this.x) > CHASE_RADIUS) continue;   // 超出主人周围 200px 不追
       const d = Math.abs(e.x - pet.x);
       if (d < td) { td = d; tgt = e; }
     }
 
-    /* 移动：有目标且较近时追击，否则跟随主人 */
-    const chaseRange = 200;
-    if (tgt && td < chaseRange) {
+    /* 移动：追击圈内有目标就扑上去，否则跟随主人 */
+    if (tgt) {
       const dx = tgt.x - pet.x;
       const adx = Math.abs(dx);
+      /* 宠物可跳跃：目标在上方且自己在地面时起跳 */
+      if (pet.onGround && tgt.y < pet.y - 10) {
+        pet.vy = -300; pet.onGround = false;
+        fx.burst(pet.x, pet.y - 10, '#38d47a', 5, 60);
+      }
       if (adx > 30) {
         pet.facing = dx > 0 ? 1 : -1;
         pet.x += pet.facing * 95 * dt;

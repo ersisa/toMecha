@@ -34,17 +34,17 @@ const SKILLS = {
   },
   flysquirrel: {
     id: 'flysquirrel', name: '飞鼠', icon: '🦔',
-    desc: '长按跳跃键2秒后可飞行3秒',
+    desc: '空中长按跳跃1.5秒或连点3次 → 悬空4秒，之后缓慢降落',
     color: '#38d47a',
   },
   mystery: {
     id: 'mystery', name: '神秘人士', icon: '❓',
-    desc: '攻击命中时有概率召唤神秘人士协同攻击',
+    desc: '命中时有概率召唤神秘人士协同攻击（所有武器通用）',
     color: '#c07bff',
   },
   bomber: {
     id: 'bomber', name: '轰炸机', icon: '✈',
-    desc: '从地图一侧飞过的轰炸机投弹攻击',
+    desc: '每次拾取空投后，轰炸机横穿全图往返轰炸一次',
     color: '#ff9a3d',
   },
   revive: {
@@ -54,12 +54,12 @@ const SKILLS = {
   },
   homing: {
     id: 'homing', name: '小帮手', icon: '🔍',
-    desc: '子弹自动追击最近敌人，射击次数-60%',
+    desc: '仅抛射物武器生效：锁定射程内目标追踪至命中；弹药-60%',
     color: '#4fd8ff',
   },
   beastmaster: {
     id: 'beastmaster', name: '驯兽大师', icon: '🐺',
-    desc: '召唤2/3血量的宠物协同攻击',
+    desc: '召唤会跳跃的宠物，追击主人周围200px内的敌人',
     color: '#38d47a',
   },
 
@@ -81,12 +81,12 @@ const SKILLS = {
   },
   quickload: {
     id: 'quickload', name: '快速装填', icon: '🔄',
-    desc: '武器冷却时间减少35%',
+    desc: '武器冷却时间减少35%（拳刃除外）',
     color: '#38d47a',
   },
   lifesteal: {
     id: 'lifesteal', name: '吸血', icon: '🩸',
-    desc: '造成伤害时恢复等量30%血量',
+    desc: '造成伤害回复生命：近战20%，远程15%',
     color: '#ff5a5a',
   },
   longshot: {
@@ -96,7 +96,7 @@ const SKILLS = {
   },
   shockwave: {
     id: 'shockwave', name: '震荡波', icon: '🌊',
-    desc: '落地时释放冲击波击退附近敌人',
+    desc: '从空中落地时释放冲击波，落得越高范围越大、击退越远',
     color: '#a08fff',
   },
   thorns: {
@@ -121,7 +121,7 @@ const SKILLS = {
   },
   luckydrop: {
     id: 'luckydrop', name: '幸运拾取', icon: '🎁',
-    desc: '空投箱出现频率+50%，拾取范围+50%',
+    desc: '空投箱出现频率+50%，拾取范围提升至32px',
     color: '#ffd23f',
   },
 };

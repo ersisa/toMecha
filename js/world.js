@@ -386,6 +386,8 @@ class World {
       fx.popup(m.x, m.y - 52, it.name + '!', '#9fdba0');
     }
     fx.burst(d.x, d.y, '#ffd23f', 8, 90);
+    /* 拾取回调：轰炸机技能每次拾取空投触发一次 */
+    if (m.onDropPicked) m.onDropPicked(fx);
   }
 
   /* 光线枪：对所有敌人求最近命中 */
@@ -407,23 +409,12 @@ class World {
       if (m.skill === 'glasscannon') dmg = Math.round(dmg * 1.5);
       if (m.skill === 'laststand' && m.hp < (m._maxHp || CFG.maxHp) * 0.3) dmg = Math.round(dmg * 1.6);
       hit.takeHit(dmg, m, {});
-      /* 吸血 */
-      if (m.skill === 'lifesteal') {
-        const hl = Math.round(dmg * 0.3);
-        m.hp = Math.min(m._maxHp || CFG.maxHp, m.hp + hl);
-        fx.popup(m.x, m.y - 48, '+' + hl, '#ff5a5a');
-      }
-      /* 神秘人士 */
-      if (m.skill === 'mystery' && Math.random() < 0.3) {
-        const md = Math.round(dmg * 0.5);
-        hit.takeHit(md, m, {});
-        fx.popup(hit.x, hit.y - 52, '神秘 ' + md, '#c07bff');
-        fx.burst(hit.x, hit.y - 24, '#c07bff', 10, 120);
-      }
+      /* 吸血 / 神秘人士：统一结算 */
+      m.onDamageDealt(hit, dmg, fx);
     }
   }
 
-  firePlasma(m) {
+  firePlasma(m, enemies) {
     let speed = WEAPONS.plasma.speed;
     let dmg = WEAPONS.plasma.dmg;
     /* 远射：投射物速度+50% */
@@ -434,11 +425,24 @@ class World {
     if (m.skill === 'glasscannon') dmg = Math.round(dmg * 1.5);
     /* 背水一战 */
     if (m.skill === 'laststand' && m.hp < (m._maxHp || CFG.maxHp) * 0.3) dmg = Math.round(dmg * 1.6);
+
+    /* 小帮手：发射时锁定武器射程内的一名敌人，全程只追这一名 */
+    const trackRange = WEAPONS.plasma.range * (m.skill === 'longshot' ? 1.5 : 1);
+    let track = null;
+    if (m.skill === 'homing' && enemies) {
+      let bd = 1e9;
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const d = Math.hypot(e.x - m.x, (e.y - 20) - (m.y - 26));
+        if (d <= trackRange && d < bd) { bd = d; track = e; }
+      }
+    }
+
     this.projs.push({
       x: m.x + m.facing * 18, y: m.y - 26,
       vx: m.facing * speed, vy: -50,
       dmg, owner: m, life: 3,
-      homing: m.skill === 'homing',
+      homing: !!track, track, trackRange,
     });
   }
 
@@ -469,8 +473,8 @@ class World {
     /* 拾取：空投箱 + 武器点位 */
     for (const m of mechs) {
       if (m.dead) continue;
-      /* 幸运拾取：拾取范围+50% */
-      const pickRange = m.skill === 'luckydrop' ? 24 : 16;
+      /* 幸运拾取：拾取范围提升到 32px */
+      const pickRange = m.skill === 'luckydrop' ? 32 : 16;
       for (const d of this.drops) {
         if (d.got) continue;
         if (Math.abs(m.x - d.x) < pickRange && Math.abs((m.y - 20) - d.y) < 26) {
@@ -492,20 +496,16 @@ class World {
 
     /* 投射物（命中所有非 owner 机甲） */
     for (const pr of this.projs) {
-      /* 小帮手：自动追击最近敌人 */
-      if (pr.homing && pr.owner && !pr.owner.dead) {
-        let tgt = null, td = 1e9;
-        for (const m of mechs) {
-          if (m === pr.owner || m.dead) continue;
-          const d = Math.hypot(m.x - pr.x, (m.y - 20) - pr.y);
-          if (d < td) { td = d; tgt = m; }
-        }
-        if (tgt && td < 300) {
-          const dx = tgt.x - pr.x, dy = (tgt.y - 20) - pr.y;
+      /* 小帮手：只追踪发射时锁定的那一目标；目标死亡或超出射程则失效 */
+      if (pr.homing && pr.track) {
+        if (pr.track.dead || Math.hypot(pr.track.x - pr.x, (pr.track.y - 20) - pr.y) > pr.trackRange) {
+          pr.homing = false; pr.track = null;
+        } else {
+          const dx = pr.track.x - pr.x, dy = (pr.track.y - 20) - pr.y;
           const dist = Math.hypot(dx, dy) || 1;
-          const sp = Math.hypot(pr.vx, pr.vy);
-          pr.vx += (dx / dist) * 400 * dt;
-          pr.vy += (dy / dist) * 400 * dt;
+          const sp = Math.hypot(pr.vx, pr.vy) || 1;
+          pr.vx += (dx / dist) * 520 * dt;
+          pr.vy += (dy / dist) * 520 * dt;
           const ns = Math.hypot(pr.vx, pr.vy);
           if (ns > sp * 1.1) { pr.vx = (pr.vx / ns) * sp * 1.1; pr.vy = (pr.vy / ns) * sp * 1.1; }
         }
@@ -519,7 +519,10 @@ class World {
       if (!boom) for (const m of mechs) {
         if (m === pr.owner || m.dead) continue;
         if (aabb({ x: pr.x - 5, y: pr.y - 5, w: 10, h: 10 }, m.hurtbox)) {
-          m.takeHit(pr.dmg, pr.owner, {}); boom = true; break;
+          m.takeHit(pr.dmg, pr.owner, {});
+          /* 吸血 / 神秘人士：轰炸机炸弹不属于武器，不触发 */
+          if (!pr.bomb && pr.owner && pr.owner.onDamageDealt) pr.owner.onDamageDealt(m, pr.dmg, fx);
+          boom = true; break;
         }
       }
       if (boom || pr.life <= 0) { pr.dead = true; fx.burst(pr.x, pr.y, '#ff9a3d', 10, 120); }

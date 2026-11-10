@@ -13,10 +13,10 @@ const CFG = {
 
 /* 武器定义：拳刃（近战）/ 光线枪（射线）/ 等离子炮（投射物） */
 const WEAPONS = {
-  blade:  { id: 'blade',  name: '拳刃',   type: 'melee', dmg: 12, cooldown: 0.45,
+  blade:  { id: 'blade',  name: '拳刃',   type: 'melee', dmg: 12, cooldown: 0.75,
             duration: 0.24, active: [0.06, 0.17], reach: 28, hw: 26, hh: 34 },
   ray:    { id: 'ray',    name: '光线枪', type: 'ray',   dmg: 9,  cooldown: 0.55, ammo: 10, range: 430 },
-  plasma: { id: 'plasma', name: '等离子炮', type: 'proj', dmg: 16, cooldown: 0.9, ammo: 6, speed: 300 },
+  plasma: { id: 'plasma', name: '等离子炮', type: 'proj', dmg: 16, cooldown: 0.9, ammo: 6, speed: 300, range: 520 },
 };
 
 /* 随机道具定义 */
